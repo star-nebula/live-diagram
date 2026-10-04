@@ -1,0 +1,1005 @@
+{
+  "meta": {
+    "title": "RAG 知识库问答 · 实时运行面板",
+    "lang": "zh-CN"
+  },
+  "canvas": {
+    "preset": "4:5",
+    "duration": 30,
+    "fps": 30,
+    "preroll": 6
+  },
+  "theme": {
+    "preset": "github-light"
+  },
+  "clock": {
+    "start": "09:30:00",
+    "rate": 3
+  },
+  "titlebar": {
+    "text": "  rag-gateway / live-diagram",
+    "tag": "example"
+  },
+  "credit": {
+    "text": "示例面板 · 所有数字均为示意（illustrative）· 由 live-diagram 生成",
+    "y": 1462,
+    "size": 13
+  },
+  "machines": {
+    "qps": {
+      "type": "ticker",
+      "start": 3240,
+      "rate": 7,
+      "format": "comma"
+    },
+    "gen": {
+      "type": "ticker",
+      "start": 118000,
+      "rate": 240,
+      "format": "comma"
+    },
+    "route": {
+      "type": "cycle",
+      "period": 5,
+      "values": [
+        {
+          "t": "检索",
+          "m": "路由 → 知识检索",
+          "c": "cy"
+        },
+        {
+          "t": "直答",
+          "m": "路由 → 常见直答",
+          "c": "pu"
+        }
+      ],
+      "log": {
+        "who": "gate",
+        "c": "bl"
+      }
+    },
+    "rag": {
+      "type": "worker",
+      "period": 8,
+      "run": 5.5,
+      "off": 0,
+      "busy": "检索中",
+      "done": [
+        "命中 128 块",
+        "命中 96 块",
+        "命中 143 块",
+        "命中 111 块"
+      ],
+      "log": {
+        "who": "rag",
+        "c": "cy",
+        "msgs": [
+          [
+            "检索完成",
+            "送重排 128 块"
+          ],
+          [
+            "检索完成",
+            "送重排 96 块"
+          ],
+          [
+            "检索完成",
+            "送重排 143 块"
+          ]
+        ]
+      }
+    },
+    "gpu": {
+      "type": "gauge",
+      "values": [
+        0.62,
+        0.71,
+        0.66,
+        0.83,
+        0.77,
+        0.92,
+        0.88,
+        0.95
+      ],
+      "period": 4,
+      "seed": 11,
+      "threshold": 0.9,
+      "decimals": 2,
+      "bad": "high",
+      "low": {
+        "label": "平稳"
+      },
+      "high": {
+        "label": "拥塞"
+      },
+      "lowColor": "gn",
+      "highColor": "rd",
+      "log": {
+        "who": "mon",
+        "c": "ye",
+        "msgs": [
+          "GPU 负载 {value} {label}"
+        ]
+      }
+    },
+    "mem": {
+      "type": "gauge",
+      "values": [
+        5.8,
+        6.4,
+        6.1,
+        7.2,
+        7.8,
+        7.6,
+        6.9
+      ],
+      "period": 6,
+      "t0": 1,
+      "seed": 23,
+      "threshold": 7.5,
+      "decimals": 1,
+      "bad": "high",
+      "low": {
+        "label": "平稳"
+      },
+      "high": {
+        "label": "吃紧"
+      },
+      "lowColor": "gn",
+      "highColor": "rd",
+      "log": {
+        "who": "mon",
+        "c": "ye",
+        "msgs": [
+          "显存 {value} GB {label}"
+        ]
+      }
+    },
+    "health": {
+      "type": "worst",
+      "of": [
+        "gpu",
+        "mem"
+      ],
+      "okText": "正常",
+      "okColor": "gn",
+      "badText": "拥塞",
+      "badColor": "rd"
+    },
+    "wk1": {
+      "type": "worker",
+      "period": 7,
+      "run": 4.5,
+      "off": 2,
+      "busy": "重排推理",
+      "done": [
+        "batch 完成",
+        "idle 休眠"
+      ]
+    },
+    "wk2": {
+      "type": "worker",
+      "period": 9,
+      "run": 6,
+      "off": 4,
+      "busy": "批处理",
+      "done": [
+        "队列清空"
+      ]
+    },
+    "guards": {
+      "type": "alarm",
+      "period": 4.5,
+      "on": 3,
+      "t0": 2,
+      "color": "pu",
+      "cps": 9,
+      "callsStart": 7,
+      "tokens": {
+        "start": 12400,
+        "step": 180
+      },
+      "onText": "处置中",
+      "offText": "待命",
+      "items": [
+        {
+          "name": "敏感词拦截",
+          "adv": [
+            "拦截 1 条违禁提问",
+            "已回执用户"
+          ]
+        },
+        {
+          "name": "提示注入",
+          "adv": [
+            "检出注入特征",
+            "已切换防御模板"
+          ]
+        },
+        {
+          "name": "限流保护",
+          "adv": [
+            "触发 429 限流",
+            "已排队重试"
+          ]
+        }
+      ],
+      "log": {
+        "who": "guard",
+        "c": "pu",
+        "start": {
+          "m": "{name} 触发",
+          "g": "处置中"
+        },
+        "end": {
+          "m": "{name} 解除",
+          "g": ""
+        }
+      }
+    }
+  },
+  "elements": [
+    {
+      "type": "text",
+      "x": 80,
+      "y": 100,
+      "size": 30,
+      "b": 1,
+      "t": "RAG 知识库问答 · 实时运行面板"
+    },
+    {
+      "type": "text",
+      "x": 80,
+      "y": 138,
+      "size": 15,
+      "c": "dim",
+      "t": "检索增强生成管线的运行态 · 固定版面，动的只有系统状态"
+    },
+    {
+      "type": "rule",
+      "x": 80,
+      "y": 158,
+      "w": 1040
+    },
+    {
+      "type": "box",
+      "x": 250,
+      "y": 176,
+      "w": 280,
+      "h": 76,
+      "color": "bl",
+      "lines": [
+        {
+          "t": "用户提问",
+          "b": 1
+        },
+        {
+          "runs": [
+            {
+              "t": "{qps}",
+              "c": "fg",
+              "b": 1
+            },
+            {
+              "t": " req/min",
+              "c": "dim",
+              "size": 14
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "poly",
+      "points": [
+        [
+          390,
+          252
+        ],
+        [
+          390,
+          282
+        ]
+      ],
+      "color": "bl",
+      "width": 2,
+      "stream": {
+        "period": 2.2,
+        "offsets": [
+          0
+        ],
+        "color": "bl"
+      }
+    },
+    {
+      "type": "box",
+      "x": 250,
+      "y": 282,
+      "w": 280,
+      "h": 150,
+      "color": "cy",
+      "lines": [
+        {
+          "t": "接入网关",
+          "b": 1
+        },
+        {
+          "t": "鉴权 · 限流 · 计量",
+          "c": "dim",
+          "size": 15
+        },
+        {
+          "runs": [
+            {
+              "t": "路由 → ",
+              "c": "dim"
+            },
+            {
+              "v": "route",
+              "b": 1
+            }
+          ]
+        },
+        {
+          "runs": [
+            {
+              "t": "在线 ",
+              "c": "dim",
+              "size": 14
+            },
+            {
+              "t": "{guards.calls}",
+              "c": "pu",
+              "b": 1
+            },
+            {
+              "t": " 次处置",
+              "c": "dim",
+              "size": 14
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "poly",
+      "points": [
+        [
+          390,
+          432
+        ],
+        [
+          390,
+          455
+        ],
+        [
+          215,
+          455
+        ],
+        [
+          215,
+          470
+        ]
+      ],
+      "r": 10,
+      "color": "cy",
+      "width": 2,
+      "when": {
+        "var": "route",
+        "eq": "检索"
+      },
+      "then": {
+        "color": "cy",
+        "width": 3
+      },
+      "stream": {
+        "period": 2.0,
+        "offsets": [
+          0
+        ],
+        "color": "cy",
+        "when": {
+          "var": "route",
+          "eq": "检索"
+        }
+      }
+    },
+    {
+      "type": "poly",
+      "points": [
+        [
+          390,
+          432
+        ],
+        [
+          390,
+          455
+        ],
+        [
+          585,
+          455
+        ],
+        [
+          585,
+          470
+        ]
+      ],
+      "r": 10,
+      "color": "line",
+      "width": 2,
+      "when": {
+        "var": "route",
+        "eq": "直答"
+      },
+      "then": {
+        "color": "pu",
+        "width": 3
+      },
+      "stream": {
+        "period": 2.8,
+        "offsets": [
+          0
+        ],
+        "color": "pu",
+        "when": {
+          "var": "route",
+          "eq": "直答"
+        }
+      }
+    },
+    {
+      "type": "box",
+      "x": 80,
+      "y": 470,
+      "w": 270,
+      "h": 140,
+      "color": "cy",
+      "when": {
+        "var": "route",
+        "eq": "检索"
+      },
+      "then": {
+        "fill": "hl",
+        "color": "cy"
+      },
+      "lines": [
+        {
+          "t": "知识检索",
+          "b": 1
+        },
+        {
+          "runs": [
+            {
+              "v": "rag"
+            }
+          ]
+        },
+        {
+          "t": "向量库 · 128 万块",
+          "c": "dim",
+          "size": 15
+        }
+      ]
+    },
+    {
+      "type": "box",
+      "x": 460,
+      "y": 470,
+      "w": 250,
+      "h": 110,
+      "color": "pu",
+      "when": {
+        "var": "route",
+        "eq": "直答"
+      },
+      "then": {
+        "fill": "hl",
+        "color": "pu"
+      },
+      "lines": [
+        {
+          "t": "常见直答",
+          "b": 1
+        },
+        {
+          "t": "FAQ 缓存 · 4 万条",
+          "c": "dim",
+          "size": 15
+        }
+      ]
+    },
+    {
+      "type": "poly",
+      "points": [
+        [
+          215,
+          610
+        ],
+        [
+          215,
+          635
+        ],
+        [
+          330,
+          635
+        ],
+        [
+          330,
+          650
+        ]
+      ],
+      "r": 10,
+      "color": "cy",
+      "width": 2,
+      "stream": {
+        "period": 1.8,
+        "offsets": [
+          0,
+          0.9
+        ],
+        "color": "cy"
+      }
+    },
+    {
+      "type": "box",
+      "x": 250,
+      "y": 650,
+      "w": 280,
+      "h": 150,
+      "color": "ye",
+      "lines": [
+        {
+          "t": "重排 + 生成",
+          "b": 1
+        },
+        {
+          "t": "top-k → LLM",
+          "c": "dim",
+          "size": 15
+        },
+        {
+          "runs": [
+            {
+              "t": "输出 ",
+              "c": "dim"
+            },
+            {
+              "v": "gen",
+              "c": "ye",
+              "b": 1
+            },
+            {
+              "t": " tok",
+              "c": "dim",
+              "size": 14
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "poly",
+      "points": [
+        [
+          390,
+          800
+        ],
+        [
+          390,
+          840
+        ]
+      ],
+      "color": "gn",
+      "width": 2,
+      "stream": {
+        "period": 1.6,
+        "offsets": [
+          0
+        ],
+        "color": "gn"
+      }
+    },
+    {
+      "type": "box",
+      "x": 250,
+      "y": 840,
+      "w": 280,
+      "h": 100,
+      "color": "gn",
+      "lines": [
+        {
+          "t": "回答用户",
+          "b": 1
+        },
+        {
+          "runs": [
+            {
+              "t": "流式输出",
+              "c": "gn"
+            },
+            {
+              "cursor": true,
+              "c": "gn"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "poly",
+      "points": [
+        [
+          585,
+          580
+        ],
+        [
+          585,
+          890
+        ],
+        [
+          536,
+          890
+        ]
+      ],
+      "r": 10,
+      "color": "pu",
+      "width": 2,
+      "dash": true,
+      "stream": {
+        "period": 3.2,
+        "offsets": [
+          0
+        ],
+        "color": "pu",
+        "when": {
+          "var": "route",
+          "eq": "直答"
+        }
+      }
+    },
+    {
+      "type": "box",
+      "x": 790,
+      "y": 282,
+      "w": 350,
+      "h": 178,
+      "color": "pu",
+      "lines": [
+        {
+          "runs": [
+            {
+              "t": "守卫模块 ",
+              "b": 1
+            },
+            {
+              "v": "guards.status"
+            }
+          ]
+        },
+        {
+          "alarm": [
+            "guards",
+            0
+          ]
+        },
+        {
+          "alarm": [
+            "guards",
+            1
+          ]
+        },
+        {
+          "alarm": [
+            "guards",
+            2
+          ]
+        },
+        {
+          "runs": [
+            {
+              "t": "累计 tokens ",
+              "c": "dim",
+              "size": 14
+            },
+            {
+              "t": "{guards.tokens}",
+              "c": "pu",
+              "b": 1,
+              "size": 14
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "beam",
+      "alarm": "guards",
+      "i": 0,
+      "from": [
+        786,
+        337
+      ],
+      "to": [
+        534,
+        337
+      ]
+    },
+    {
+      "type": "beam",
+      "alarm": "guards",
+      "i": 1,
+      "from": [
+        786,
+        367
+      ],
+      "to": [
+        534,
+        367
+      ]
+    },
+    {
+      "type": "beam",
+      "alarm": "guards",
+      "i": 2,
+      "from": [
+        786,
+        397
+      ],
+      "to": [
+        534,
+        397
+      ]
+    },
+    {
+      "type": "box",
+      "x": 790,
+      "y": 500,
+      "w": 350,
+      "h": 190,
+      "color": "gn",
+      "lines": [
+        {
+          "t": "集群负载",
+          "b": 1
+        },
+        {
+          "items": [
+            {
+              "w": 52,
+              "runs": [
+                {
+                  "t": "GPU",
+                  "c": "dim",
+                  "size": 14
+                }
+              ]
+            },
+            {
+              "w": 160,
+              "bar": {
+                "w": 160,
+                "h": 16,
+                "gauge": "gpu",
+                "low": "gn",
+                "high": "rd"
+              }
+            },
+            {
+              "grow": 1,
+              "align": "right",
+              "runs": [
+                {
+                  "t": "{gpu} ",
+                  "c": "dim",
+                  "size": 14
+                },
+                {
+                  "v": "gpu.label",
+                  "size": 14
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "items": [
+            {
+              "w": 52,
+              "runs": [
+                {
+                  "t": "显存",
+                  "c": "dim",
+                  "size": 14
+                }
+              ]
+            },
+            {
+              "w": 160,
+              "bar": {
+                "w": 160,
+                "h": 16,
+                "gauge": "mem",
+                "max": 8,
+                "low": "gn",
+                "high": "rd"
+              }
+            },
+            {
+              "grow": 1,
+              "align": "right",
+              "runs": [
+                {
+                  "t": "{mem}G ",
+                  "c": "dim",
+                  "size": 14
+                },
+                {
+                  "v": "mem.label",
+                  "size": 14
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "runs": [
+            {
+              "t": "健康状态：",
+              "c": "dim"
+            },
+            {
+              "v": "health"
+            }
+          ]
+        },
+        {
+          "runs": [
+            {
+              "sw": "gn"
+            },
+            {
+              "t": "平稳    ",
+              "c": "dim",
+              "size": 14
+            },
+            {
+              "sw": "rd"
+            },
+            {
+              "t": "拥塞 / 吃紧",
+              "c": "dim",
+              "size": 14
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "box",
+      "x": 790,
+      "y": 730,
+      "w": 350,
+      "h": 140,
+      "color": "ye",
+      "lines": [
+        {
+          "t": "执行队列",
+          "b": 1
+        },
+        {
+          "items": [
+            {
+              "w": 84,
+              "runs": [
+                {
+                  "t": "重排集群",
+                  "c": "dim",
+                  "size": 14
+                }
+              ]
+            },
+            {
+              "grow": 1,
+              "runs": [
+                {
+                  "v": "wk1"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "items": [
+            {
+              "w": 84,
+              "runs": [
+                {
+                  "t": "批处理",
+                  "c": "dim",
+                  "size": 14
+                }
+              ]
+            },
+            {
+              "grow": 1,
+              "runs": [
+                {
+                  "v": "wk2"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "type": "log",
+      "x": 80,
+      "y": 990,
+      "w": 1040,
+      "rows": 6,
+      "title": "事件流",
+      "cols": [
+        {
+          "key": "time",
+          "x": 0
+        },
+        {
+          "key": "who",
+          "x": 106
+        },
+        {
+          "key": "m",
+          "x": 178
+        },
+        {
+          "key": "g",
+          "x": 560
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "x": 0,
+      "y": 1250,
+      "w": 1200,
+      "align": "center",
+      "size": 16,
+      "runs": [
+        {
+          "t": "packets ",
+          "c": "dim"
+        },
+        {
+          "t": "{packets}",
+          "c": "fg",
+          "b": 1
+        },
+        {
+          "t": "   ·   clock ",
+          "c": "dim"
+        },
+        {
+          "t": "{clock}",
+          "c": "fg"
+        },
+        {
+          "t": "   ·   qps ",
+          "c": "dim"
+        },
+        {
+          "t": "{qps}",
+          "c": "fg"
+        },
+        {
+          "t": " /min   ·   guard tokens ",
+          "c": "dim"
+        },
+        {
+          "t": "{guards.tokens}",
+          "c": "pu"
+        }
+      ]
+    }
+  ]
+}

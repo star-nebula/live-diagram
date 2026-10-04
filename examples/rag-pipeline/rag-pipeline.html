@@ -1,0 +1,714 @@
+<!doctype html>
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>live-diagram</title>
+<style>
+/* live-diagram engine. 版面在 boot 时一次性搭好；此后一切可见变化都是 seek(t) 的纯函数。
+   内容、颜色、字号全部来自 JSON 配置（字段表见 references/config-schema.md）。 */
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--c-bg,#10141a)}
+#stage{position:absolute;transform-origin:0 0;overflow:hidden;white-space:pre;
+  color:var(--c-fg);font-family:var(--font);font-size:var(--fs);line-height:var(--lh)}
+#stage>*{position:absolute}
+.tb{left:0;top:0;text-align:center;background:var(--c-bar);color:var(--c-dim)}
+.tb i{position:absolute;border-radius:50%}
+.box{border-top:var(--bw,2px) solid;border-bottom:var(--bw,2px) solid}
+.box::before,.box::after{content:"";position:absolute;top:0;bottom:0;width:var(--bw,2px);
+  background:repeating-linear-gradient(180deg,currentColor 0 calc(var(--lh) - 8px),transparent calc(var(--lh) - 8px) var(--lh))}
+.box::before{left:0}.box::after{right:0}
+.box.solid{border:var(--bw,2px) solid currentColor;border-radius:var(--radius,0px)}
+.box.solid::before,.box.solid::after{display:none}
+.box.dashed{border-style:dashed}
+.box .ln{color:var(--c-fg);height:var(--lh)}
+.ln.flex{display:flex;align-items:center;overflow:visible}
+.sw{display:inline-block;width:.6em;height:.6em;margin-right:.5em;vertical-align:baseline}
+.wire{background:var(--c-line)}
+.dashv{background:repeating-linear-gradient(180deg,var(--c-line) 0 5px,transparent 5px 10px)}
+.dashh{background:repeating-linear-gradient(90deg,var(--c-line) 0 5px,transparent 5px 10px)}
+.pk{border-radius:50%;display:none}
+.pkglow{box-shadow:0 0 8px currentColor}
+.bar{position:relative;display:block;height:18px;
+  background-image:radial-gradient(var(--c-dots,#566078) 1px,transparent 1.3px);background-size:4px 4px}
+.bar u{position:absolute;left:0;top:0;bottom:0;text-decoration:none}
+.bar u.end::after{content:"";position:absolute;right:0;top:0;bottom:0;width:7px;
+  background:repeating-conic-gradient(var(--c-bg) 0 25%,transparent 0 50%) 0 0/4px 4px;opacity:.5}
+.bar s{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--c-fg);text-decoration:none}
+.cur{display:inline-block;width:.6em;height:1.05em;vertical-align:-.18em;margin-left:.35em}
+.beam{height:0;border-top:2px dashed var(--c-line)}
+.glyph{text-align:center;line-height:1}
+.feedframe{border:var(--bw,2px) solid var(--c-line2);border-top:0}
+.feedtop{height:0;border-top:var(--bw,2px) solid var(--c-line2)}
+.feedrow{position:absolute}
+.feedrow span{position:absolute;top:0}
+#err{position:absolute;left:8px;top:8px;color:#f66;font:13px monospace;white-space:pre-wrap;z-index:9}
+#stage.grid{background-image:
+  linear-gradient(rgba(160,200,235,.05) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(160,200,235,.05) 1px,transparent 1px),
+  linear-gradient(rgba(160,200,235,.09) 1px,transparent 1px),
+  linear-gradient(90deg,rgba(160,200,235,.09) 1px,transparent 1px);
+  background-size:24px 24px,24px 24px,96px 96px,96px 96px}
+.box.ticks{background-image:
+  linear-gradient(currentColor,currentColor),linear-gradient(currentColor,currentColor),
+  linear-gradient(currentColor,currentColor),linear-gradient(currentColor,currentColor),
+  linear-gradient(currentColor,currentColor),linear-gradient(currentColor,currentColor),
+  linear-gradient(currentColor,currentColor),linear-gradient(currentColor,currentColor);
+  background-repeat:no-repeat;
+  background-position:left top,left bottom,right top,right bottom,left top,left bottom,right top,right bottom;
+  background-size:12px 2px,12px 2px,12px 2px,12px 2px,2px 12px,2px 12px,2px 12px,2px 12px}
+.pk.diamond{border-radius:1px;transform:rotate(45deg)}
+.pkt{position:absolute;border-radius:2px;pointer-events:none}
+.tb.ghbar{background:var(--c-bar);border-bottom:1px solid var(--c-line2);color:var(--c-wh);text-align:left;padding-left:24px}
+.tb.ghbar span{position:absolute;right:24px;top:0;opacity:.65}
+.beamln{position:absolute;height:0}
+.bdash{position:absolute;height:2px;top:-1px;background:var(--c-line)}
+</style></head>
+<body>
+<div id="stage"></div>
+<script id="app-config" type="application/json">{"meta": {"title": "RAG 知识库问答 · 实时运行面板", "lang": "zh-CN"}, "canvas": {"preset": "4:5", "duration": 30, "fps": 30, "preroll": 6}, "theme": {"preset": "github-light"}, "clock": {"start": "09:30:00", "rate": 3}, "titlebar": {"text": "  rag-gateway / live-diagram", "tag": "example"}, "credit": {"text": "示例面板 · 所有数字均为示意（illustrative）· 由 live-diagram 生成", "y": 1462, "size": 13}, "machines": {"qps": {"type": "ticker", "start": 3240, "rate": 7, "format": "comma"}, "gen": {"type": "ticker", "start": 118000, "rate": 240, "format": "comma"}, "route": {"type": "cycle", "period": 5, "values": [{"t": "检索", "m": "路由 → 知识检索", "c": "cy"}, {"t": "直答", "m": "路由 → 常见直答", "c": "pu"}], "log": {"who": "gate", "c": "bl"}}, "rag": {"type": "worker", "period": 8, "run": 5.5, "off": 0, "busy": "检索中", "done": ["命中 128 块", "命中 96 块", "命中 143 块", "命中 111 块"], "log": {"who": "rag", "c": "cy", "msgs": [["检索完成", "送重排 128 块"], ["检索完成", "送重排 96 块"], ["检索完成", "送重排 143 块"]]}}, "gpu": {"type": "gauge", "values": [0.62, 0.71, 0.66, 0.83, 0.77, 0.92, 0.88, 0.95], "period": 4, "seed": 11, "threshold": 0.9, "decimals": 2, "bad": "high", "low": {"label": "平稳"}, "high": {"label": "拥塞"}, "lowColor": "gn", "highColor": "rd", "log": {"who": "mon", "c": "ye", "msgs": ["GPU 负载 {value} {label}"]}}, "mem": {"type": "gauge", "values": [5.8, 6.4, 6.1, 7.2, 7.8, 7.6, 6.9], "period": 6, "t0": 1, "seed": 23, "threshold": 7.5, "decimals": 1, "bad": "high", "low": {"label": "平稳"}, "high": {"label": "吃紧"}, "lowColor": "gn", "highColor": "rd", "log": {"who": "mon", "c": "ye", "msgs": ["显存 {value} GB {label}"]}}, "health": {"type": "worst", "of": ["gpu", "mem"], "okText": "正常", "okColor": "gn", "badText": "拥塞", "badColor": "rd"}, "wk1": {"type": "worker", "period": 7, "run": 4.5, "off": 2, "busy": "重排推理", "done": ["batch 完成", "idle 休眠"]}, "wk2": {"type": "worker", "period": 9, "run": 6, "off": 4, "busy": "批处理", "done": ["队列清空"]}, "guards": {"type": "alarm", "period": 4.5, "on": 3, "t0": 2, "color": "pu", "cps": 9, "callsStart": 7, "tokens": {"start": 12400, "step": 180}, "onText": "处置中", "offText": "待命", "items": [{"name": "敏感词拦截", "adv": ["拦截 1 条违禁提问", "已回执用户"]}, {"name": "提示注入", "adv": ["检出注入特征", "已切换防御模板"]}, {"name": "限流保护", "adv": ["触发 429 限流", "已排队重试"]}], "log": {"who": "guard", "c": "pu", "start": {"m": "{name} 触发", "g": "处置中"}, "end": {"m": "{name} 解除", "g": ""}}}}, "elements": [{"type": "text", "x": 80, "y": 100, "size": 30, "b": 1, "t": "RAG 知识库问答 · 实时运行面板"}, {"type": "text", "x": 80, "y": 138, "size": 15, "c": "dim", "t": "检索增强生成管线的运行态 · 固定版面，动的只有系统状态"}, {"type": "rule", "x": 80, "y": 158, "w": 1040}, {"type": "box", "x": 250, "y": 176, "w": 280, "h": 76, "color": "bl", "lines": [{"t": "用户提问", "b": 1}, {"runs": [{"t": "{qps}", "c": "fg", "b": 1}, {"t": " req/min", "c": "dim", "size": 14}]}]}, {"type": "poly", "points": [[390, 252], [390, 282]], "color": "bl", "width": 2, "stream": {"period": 2.2, "offsets": [0], "color": "bl"}}, {"type": "box", "x": 250, "y": 282, "w": 280, "h": 150, "color": "cy", "lines": [{"t": "接入网关", "b": 1}, {"t": "鉴权 · 限流 · 计量", "c": "dim", "size": 15}, {"runs": [{"t": "路由 → ", "c": "dim"}, {"v": "route", "b": 1}]}, {"runs": [{"t": "在线 ", "c": "dim", "size": 14}, {"t": "{guards.calls}", "c": "pu", "b": 1}, {"t": " 次处置", "c": "dim", "size": 14}]}]}, {"type": "poly", "points": [[390, 432], [390, 455], [215, 455], [215, 470]], "r": 10, "color": "cy", "width": 2, "when": {"var": "route", "eq": "检索"}, "then": {"color": "cy", "width": 3}, "stream": {"period": 2.0, "offsets": [0], "color": "cy", "when": {"var": "route", "eq": "检索"}}}, {"type": "poly", "points": [[390, 432], [390, 455], [585, 455], [585, 470]], "r": 10, "color": "line", "width": 2, "when": {"var": "route", "eq": "直答"}, "then": {"color": "pu", "width": 3}, "stream": {"period": 2.8, "offsets": [0], "color": "pu", "when": {"var": "route", "eq": "直答"}}}, {"type": "box", "x": 80, "y": 470, "w": 270, "h": 140, "color": "cy", "when": {"var": "route", "eq": "检索"}, "then": {"fill": "hl", "color": "cy"}, "lines": [{"t": "知识检索", "b": 1}, {"runs": [{"v": "rag"}]}, {"t": "向量库 · 128 万块", "c": "dim", "size": 15}]}, {"type": "box", "x": 460, "y": 470, "w": 250, "h": 110, "color": "pu", "when": {"var": "route", "eq": "直答"}, "then": {"fill": "hl", "color": "pu"}, "lines": [{"t": "常见直答", "b": 1}, {"t": "FAQ 缓存 · 4 万条", "c": "dim", "size": 15}]}, {"type": "poly", "points": [[215, 610], [215, 635], [330, 635], [330, 650]], "r": 10, "color": "cy", "width": 2, "stream": {"period": 1.8, "offsets": [0, 0.9], "color": "cy"}}, {"type": "box", "x": 250, "y": 650, "w": 280, "h": 150, "color": "ye", "lines": [{"t": "重排 + 生成", "b": 1}, {"t": "top-k → LLM", "c": "dim", "size": 15}, {"runs": [{"t": "输出 ", "c": "dim"}, {"v": "gen", "c": "ye", "b": 1}, {"t": " tok", "c": "dim", "size": 14}]}]}, {"type": "poly", "points": [[390, 800], [390, 840]], "color": "gn", "width": 2, "stream": {"period": 1.6, "offsets": [0], "color": "gn"}}, {"type": "box", "x": 250, "y": 840, "w": 280, "h": 100, "color": "gn", "lines": [{"t": "回答用户", "b": 1}, {"runs": [{"t": "流式输出", "c": "gn"}, {"cursor": true, "c": "gn"}]}]}, {"type": "poly", "points": [[585, 580], [585, 890], [536, 890]], "r": 10, "color": "pu", "width": 2, "dash": true, "stream": {"period": 3.2, "offsets": [0], "color": "pu", "when": {"var": "route", "eq": "直答"}}}, {"type": "box", "x": 790, "y": 282, "w": 350, "h": 178, "color": "pu", "lines": [{"runs": [{"t": "守卫模块 ", "b": 1}, {"v": "guards.status"}]}, {"alarm": ["guards", 0]}, {"alarm": ["guards", 1]}, {"alarm": ["guards", 2]}, {"runs": [{"t": "累计 tokens ", "c": "dim", "size": 14}, {"t": "{guards.tokens}", "c": "pu", "b": 1, "size": 14}]}]}, {"type": "beam", "alarm": "guards", "i": 0, "from": [786, 337], "to": [534, 337]}, {"type": "beam", "alarm": "guards", "i": 1, "from": [786, 367], "to": [534, 367]}, {"type": "beam", "alarm": "guards", "i": 2, "from": [786, 397], "to": [534, 397]}, {"type": "box", "x": 790, "y": 500, "w": 350, "h": 190, "color": "gn", "lines": [{"t": "集群负载", "b": 1}, {"items": [{"w": 52, "runs": [{"t": "GPU", "c": "dim", "size": 14}]}, {"w": 160, "bar": {"w": 160, "h": 16, "gauge": "gpu", "low": "gn", "high": "rd"}}, {"grow": 1, "align": "right", "runs": [{"t": "{gpu} ", "c": "dim", "size": 14}, {"v": "gpu.label", "size": 14}]}]}, {"items": [{"w": 52, "runs": [{"t": "显存", "c": "dim", "size": 14}]}, {"w": 160, "bar": {"w": 160, "h": 16, "gauge": "mem", "max": 8, "low": "gn", "high": "rd"}}, {"grow": 1, "align": "right", "runs": [{"t": "{mem}G ", "c": "dim", "size": 14}, {"v": "mem.label", "size": 14}]}]}, {"runs": [{"t": "健康状态：", "c": "dim"}, {"v": "health"}]}, {"runs": [{"sw": "gn"}, {"t": "平稳    ", "c": "dim", "size": 14}, {"sw": "rd"}, {"t": "拥塞 / 吃紧", "c": "dim", "size": 14}]}]}, {"type": "box", "x": 790, "y": 730, "w": 350, "h": 140, "color": "ye", "lines": [{"t": "执行队列", "b": 1}, {"items": [{"w": 84, "runs": [{"t": "重排集群", "c": "dim", "size": 14}]}, {"grow": 1, "runs": [{"v": "wk1"}]}]}, {"items": [{"w": 84, "runs": [{"t": "批处理", "c": "dim", "size": 14}]}, {"grow": 1, "runs": [{"v": "wk2"}]}]}]}, {"type": "log", "x": 80, "y": 990, "w": 1040, "rows": 6, "title": "事件流", "cols": [{"key": "time", "x": 0}, {"key": "who", "x": 106}, {"key": "m", "x": 178}, {"key": "g", "x": 560}]}, {"type": "text", "x": 0, "y": 1250, "w": 1200, "align": "center", "size": 16, "runs": [{"t": "packets ", "c": "dim"}, {"t": "{packets}", "c": "fg", "b": 1}, {"t": "   ·   clock ", "c": "dim"}, {"t": "{clock}", "c": "fg"}, {"t": "   ·   qps ", "c": "dim"}, {"t": "{qps}", "c": "fg"}, {"t": " /min   ·   guard tokens ", "c": "dim"}, {"t": "{guards.tokens}", "c": "pu"}]}]}</script>
+<script>
+(function(){
+'use strict';
+// ---------- 基础工具 ----------
+var mod=function(a,n){return ((a%n)+n)%n};
+var esc=function(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;')};
+// 确定性"随机"：hash(种子, 序号) 的纯函数。不用 Math.random，不读墙钟。
+function hash(seed,k){
+  var h=Math.imul((seed|0)+0x51ed270b,0x85ebca6b)^Math.imul((k|0)+1,0xc2b2ae35);
+  h=Math.imul(h^(h>>>15),0x27d4eb2d);h^=h>>>13;h=Math.imul(h,0x165667b1);h^=h>>>16;
+  return (h>>>0)/4294967296;
+}
+function fmtNum(n,f){n=Math.floor(n);return f==='comma'?String(n).replace(/\B(?=(\d{3})+(?!\d))/g,','):String(n)}
+
+// ---------- 全局状态 ----------
+var cfg=null,ST=document.getElementById('stage'),V={},DYN=[],MACH=[],STREAMS=[],BEAMS=[],FEED=null,CONDBOX=[],CONDPATH=[];
+// V 变量表（模板 {var} 取值）；MACH 状态机；DYN 动态文本节点；STREAMS 光点流；BEAMS 触发光束；FEED 日志
+var CW=1200,CH=1500,LH=30,FS=21,PRE=0,TH={};
+window.__ready=false;window.__pending=null;window.__error='';
+
+function fail(e){var d=document.getElementById('err');
+  if(!d){d=document.createElement('div');d.id='err';document.body.appendChild(d)}
+  d.textContent+=String(e&&e.stack||e)+'\n';window.__error+=String(e)+'\n'}
+
+function loadConfig(){
+  var el=document.getElementById('app-config');
+  if(el&&el.textContent.trim())return Promise.resolve(JSON.parse(el.textContent));
+  var m=/[?&]config=([^&]+)/.exec(location.search);
+  if(m)return fetch(decodeURIComponent(m[1])).then(function(r){return r.json()});
+  return Promise.reject(new Error('no config: embed <script id="app-config" type="application/json"> or use ?config='));
+}
+
+// ---------- 取值 / 模板 ----------
+function tv(k){var v=V[k];if(v==null)return '';return typeof v==='object'?v.text:String(v)}
+function fill(s){return String(s).replace(/\{([\w.\-]+)\}/g,function(m,k){var v=V[k];return v==null?m:(typeof v==='object'?v.text:String(v))})}
+function cond(w){ // {var, eq|ne|in:[...]}; 数组 = AND
+  if(!w)return true;
+  if(Array.isArray(w))return w.every(cond);
+  var v=tv(w['var']);
+  if('eq' in w)return v===String(w.eq);
+  if('ne' in w)return v!==String(w.ne);
+  if('in' in w)return w['in'].map(String).indexOf(v)>=0;
+  return !!v;
+}
+function col(n){return n?'var(--c-'+n+')':''}
+
+// ---------- run / 行 / 进度条 ----------
+function runHtml(r){
+  if(typeof r==='string')r={t:r};
+  var c=r.c,b=r.b;
+  if(r.when&&r.then&&cond(r.when)){if(r.then.c)c=r.then.c;if(r.then.b!=null)b=r.then.b}
+  if(r.cursor){var on=mod(V.__t,r.period||1.1)<(r.on||0.6);
+    return '<span class="cur" style="background:'+col(c||'gr')+';opacity:'+(on?1:0)+'"></span>'}
+  if(r.sw)return '<i class="sw" style="background:'+col(r.sw)+'"></i>';
+  var txt;
+  if(r.v!=null){var v=V[r.v];if(v==null)v='';
+    if(typeof v==='object'){txt=v.text;if(!c&&v.c)c=v.c;if(b==null&&v.b!=null)b=v.b}
+    else txt=String(v)}
+  else txt=fill(r.t==null?'':r.t);
+  var sty='';
+  if(c)sty+='color:'+col(c)+';';
+  if(b)sty+='font-weight:700;';
+  if(r.size)sty+='font-size:'+r.size+'px;';
+  return sty?'<span style="'+sty+'">'+esc(txt)+'</span>':esc(txt);
+}
+function runsHtml(rs){return (rs||[]).map(runHtml).join('')}
+function barHtml(b){
+  var segs,w=b.w||140,h=b.h||18;
+  if(b.gauge){var n=(V[b.gauge+'.num']||0)/(b.max||1),low=V[b.gauge+'.low']==='1',c=low?(b.low||'rd'):(b.high||'gn');
+    segs=[{from:0,to:n,c:c,end:true}]}
+  else if(b.segments)segs=b.segments;
+  else segs=[{from:0,to:b.fixed==null?1:b.fixed,c:b.c||'bl'}];
+  var out='<span class="bar" style="width:'+w+'px;height:'+h+'px">';
+  segs.forEach(function(s){out+='<u class="'+(s.end?'end':'')+'" style="left:'+(s.from*100)+'%;width:'+((s.to-s.from)*100)+'%;background:'+col(s.c)+'"></u>'});
+  if(b.mark!=null)out+='<s style="left:'+(b.mark*100)+'%"></s>';
+  return out+'</span>';
+}
+function normLine(l){
+  if(typeof l==='string')l={runs:[l]};
+  if(l.alarm){ // 侧栏告警行语法糖，绑定 alarm 状态机
+    var id=l.alarm[0],i=l.alarm[1],m=cfg.machines[id],hl=m.hl||'hl',c=m.color||'pu';
+    l=Object.assign({align:'left',indent:l.indent==null?14:l.indent,
+      runs:[{v:id+'.label'+i,c:'dim',when:{'var':id+'.active',eq:i},then:{c:c,b:1}}],
+      when:{'var':id+'.active',eq:i},then:{bg:hl,c:c,b:1}},l);
+  }
+  if(l.t!=null&&!l.runs&&!l.items)l.runs=[{t:l.t}];
+  return l;
+}
+function lineStyle(l){
+  if(l.when&&l.then&&cond(l.when))
+    return {bg:l.then.bg?col(l.then.bg):'',c:l.then.c?col(l.then.c):'',b:l.then.b?'700':''};
+  return {bg:'',c:l.c?col(l.c):'',b:l.b?'700':''};
+}
+function addLine(parent,l,boxAlign){
+  l=normLine(l);
+  var d=document.createElement('div');d.className='ln'+(l.items?' flex':'');
+  d.style.textAlign=l.align||boxAlign||'center';
+  if(l.indent)d.style.paddingLeft=l.indent+'px';
+  if(l.h)d.style.height=(l.h*LH)+'px';
+  if(l.size)d.style.fontSize=l.size+'px';
+  if(l.b)d.style.fontWeight=700;
+  parent.appendChild(d);
+  if(l.items){
+    d.style.gap=(l.gap||0)+'px';
+    l.items.forEach(function(it){
+      var e=document.createElement('div');e.setAttribute('data-k','text');
+      if(it.w)e.style.flex='0 0 '+it.w+'px';else if(it.grow)e.style.flex='1 1 0';else e.style.flex='0 0 auto';
+      if(it.ml)e.style.marginLeft=it.ml;
+      e.style.textAlign=it.align||'left';if(it.size)e.style.fontSize=it.size+'px';
+      d.appendChild(e);
+      DYN.push({el:e,fn:function(){return it.bar?barHtml(it.bar):runsHtml(it.runs)},last:null});
+    });
+    DYN.push({el:d,fn:function(){return null},cls:function(){return lineStyle(l)},last:null,lk:null});
+  }else{
+    d.setAttribute('data-k','text');
+    DYN.push({el:d,fn:function(){return runsHtml(l.runs)},cls:function(){return lineStyle(l)},last:null,lk:null});
+  }
+}
+function applyDyn(){
+  DYN.forEach(function(d){
+    var h=d.fn();
+    if(h!==null&&h!==d.last){d.el.innerHTML=h;d.last=h}
+    if(d.cls){var s=d.cls(),k=s.bg+'|'+s.c+'|'+s.b;
+      if(k!==d.lk){d.el.style.background=s.bg;d.el.style.color=s.c||'';d.el.style.fontWeight=s.b;d.lk=k}}
+  });
+}
+
+// ---------- 光点（数据包） ----------
+function mkpk(color){
+  var e=document.createElement('div');e.className='pk';
+  if(TH.packetShape==='diamond')e.classList.add('diamond');
+  var sz=TH.packetSize||12;
+  e.style.width=e.style.height=sz+'px';e.style.margin=(-sz/2)+'px 0 0 '+(-sz/2)+'px';
+  e.style.background=col(color)||color;
+  if(TH.glow){e.style.color=e.style.background;e.classList.add('pkglow')}
+  ST.appendChild(e);return e;
+}
+function mktrail(color){ // 彗星尾迹：沿行进方向渐隐的短光带（层序在头点之下）
+  var h=Math.max(3,Math.round((TH.packetSize||12)/4));
+  var e=document.createElement('div');e.className='pkt';
+  e.style.height=h+'px';
+  e.style.background='linear-gradient(90deg,transparent,'+(col(color)||color)+' 60%)';
+  ST.appendChild(e);return e;
+}
+function mkpair(color){var t=mktrail(color),h2=mkpk(color);return [h2,t]}
+function prepPath(P){P.len=0;P.seg=[];
+  for(var i=1;i<P.path.length;i++){var d=Math.abs(P.path[i][0]-P.path[i-1][0])+Math.abs(P.path[i][1]-P.path[i-1][1]);
+    P.seg.push(d);P.len+=d}}
+function atPath(P,d){ // 折线上走 d 像素后的坐标（曼哈顿长度）
+  if(d<0||d>P.len)return null;
+  for(var i=0;i<P.seg.length;i++){
+    if(d<=P.seg[i]){var a=P.path[i],b=P.path[i+1],f=P.seg[i]?d/P.seg[i]:0;
+      return [a[0]+(b[0]-a[0])*f,a[1]+(b[1]-a[1])*f]}
+    d-=P.seg[i]}
+  return P.path[P.path.length-1];
+}
+function putPk(e,t,P,d){
+  var q=atPath(P,d);
+  if(!q||(P.gap&&q[1]>P.gap[0]&&q[1]<P.gap[1])){e.style.display='none';t.style.display='none';return}
+  e.style.display='block';e.style.left=q[0]+'px';e.style.top=q[1]+'px';
+  var c=0,i=0,L=P.tail==null?16:P.tail;
+  while(i<P.seg.length-1&&d>c+P.seg[i]){c+=P.seg[i];i++}
+  var avail=Math.min(L,d-c);
+  if(avail<1){t.style.display='none';return}
+  var a=P.path[i],b=P.path[i+1],f=(d-avail/2-c)/P.seg[i];
+  var mx=a[0]+(b[0]-a[0])*f,my=a[1]+(b[1]-a[1])*f,
+  ang=Math.atan2(b[1]-a[1],b[0]-a[0])*180/Math.PI;
+  t.style.display='block';t.style.width=avail+'px';
+  t.style.left=(mx-avail/2)+'px';t.style.top=(my-P.th/2)+'px';
+  t.style.transform='rotate('+ang+'deg)';
+}
+
+// ---------- 状态机：一切会动的东西都是 t 的纯函数，日志由它们产生 ----------
+function pickIdx(m,k){ // 固定种子取值，且不与上一轮重复
+  var n=m.values.length,b=Math.floor(hash(m.seed||7,k)*n);
+  if(n>1&&b===Math.floor(hash(m.seed||7,k-1)*n))b=(b+1)%n;
+  return b;
+}
+var MK={
+ ticker:function(id,m){ // 累计计数：start + rate*t
+   return {vars:function(t){V[id]=(m.prefix||'')+fmtNum((m.start||0)+(m.rate||0)*t,m.format)+(m.suffix||'')},
+     events:function(){return []}}},
+ cycle:function(id,m){ // 轮播：每 period 换一个值，可带附加字段；log 每格一条
+   var n=m.values.length;
+   function val(j){var v=m.values[m.order?m.order[mod(j,m.order.length)]:mod(j,n)];
+     return typeof v==='object'?v:{t:v}}
+   return {vars:function(t){var j=Math.floor((t-(m.t0||0))/m.period),v=val(j);
+       V[id]=(typeof v==='object'&&(v.c||v.b))?{text:(v.t!=null?v.t:(v.m||'')),c:v.c,b:v.b}
+                                            :(v.t!=null?v.t:(v.m||''));
+       V[id+'.i']=String(m.order?m.order[mod(j,m.order.length)]:mod(j,n));
+       Object.keys(v).forEach(function(k){V[id+'.'+k]=String(v[k])})},
+     events:function(lo,hi){if(!m.log)return [];
+       var o=[];for(var j=Math.max(0,Math.floor((lo-(m.t0||0))/m.period));j<=Math.ceil((hi-(m.t0||0))/m.period);j++){
+         var v=val(j);o.push({t:(m.t0||0)+j*m.period,who:m.log.who,c:m.log.c,m:v.m!=null?v.m:(v.t||''),g:v.g||''})}
+       return o}}},
+ gauge:function(id,m){ // 仪表：每 period 从 values 重掷一次，v<threshold 为 low 态；bad 指明哪一侧是坏状态；log 记录数值
+   var th=m.threshold,dec=m.decimals==null?2:m.decimals;
+   function st(k){var v=m.values[pickIdx(m,k)],low=v<th,L=low?(m.low||{}):(m.high||{});
+     return {v:v,low:low,label:L.label||'',dest:L.dest||''}}
+   return {vars:function(t){var k=Math.floor((t-(m.t0||0))/m.period),s=st(k);
+       V[id]=s.v.toFixed(dec);V[id+'.num']=s.v;V[id+'.low']=s.low?'1':'';
+       V[id+'.bad']=(s.low===(m.bad!=='high'))?'1':'';
+       V[id+'.label']={text:s.label,c:s.low?(m.lowColor||'rd'):(m.highColor||'gn'),b:s.low?1:0};
+       V[id+'.dest']=s.dest},
+     events:function(lo,hi){if(!m.log)return [];
+       var o=[];for(var k=Math.max(0,Math.floor((lo-(m.t0||0))/m.period));k<=Math.ceil((hi-(m.t0||0))/m.period);k++){
+         var s=st(k),sc={value:s.v.toFixed(dec),label:s.label,dest:s.dest},
+         f=function(x){return String(x).replace(/\{(\w+)\}/g,function(a,b){return sc[b]!=null?sc[b]:a})};
+         o.push({t:(m.t0||0)+k*m.period,who:m.log.who,c:m.log.c,m:f(m.log.msgs[mod(k,m.log.msgs.length)]),g:f(m.log.tail||'')})}
+       return o}}},
+ worst:function(id,m){ // 汇总：任一 gauge 处于坏状态（.bad）则坏（输出带颜色的文本对象）
+   return {vars:function(){
+     var bad=m.of.some(function(g){return V[g+'.bad']==='1'});
+     V[id]=bad?{text:m.badText||'bad',c:m.badColor||'rd',b:1}
+              :{text:m.okText||'ok',c:m.okColor||'gn',b:1}
+   },events:function(){return []}}},
+ worker:function(id,m){ // 工位：busy(period 内前 run 秒，转圈) ⇄ done(打勾)
+   var sp=m.spin||['◐','◓','◑','◒'],off=m.off||0;
+   return {vars:function(t){var c=Math.floor((t-off)/m.period),p=(t-off)-c*m.period,run=p<m.run;
+       if(run)V[id]={text:sp[mod(Math.floor(t/(m.spinStep||0.3))+(m.phase||0),sp.length)]+' '+m.busy,c:m.busyColor||'bl'};
+       else V[id]={text:'✓ '+m.done[mod(c,m.done.length)],c:m.doneColor||'gr'};
+       V[id+'.state']=run?'busy':'done'},
+     events:function(lo,hi){if(!m.log)return [];
+       var o=[];for(var c=Math.max(0,Math.floor((lo-off)/m.period));c<=Math.ceil((hi-off)/m.period);c++){
+         var e=m.log.msgs[mod(c,m.log.msgs.length)];
+         o.push({t:m.off+c*m.period+m.run,who:m.log.who,c:m.log.c,m:e[0],g:e[1]||''})}
+       return o}}},
+ alarm:function(id,m){ // 告警台：轮到谁谁亮，建议逐字打出，calls/tokens 累计，log 记开始/解除
+   var it=m.items,n=it.length,cps=m.cps||9,t0=m.t0||0;
+   return {vars:function(t){var k=Math.floor((t-t0)/m.period),ph=(t-t0)-k*m.period,on=ph<m.on,cur=mod(k,n),I=it[cur];
+       V[id+'.active']=on?String(cur):'-1';V[id+'.cur']=String(cur);V[id+'.phase']=ph;
+       Object.keys(I).forEach(function(f){if(typeof I[f]!=='object')V[id+'.'+f]=String(I[f])});
+       for(var i=0;i<n;i++)V[id+'.label'+i]=(on&&i===cur?'◆ ':'◇ ')+it[i].name;
+       V[id+'.calls']=String(k+(m.callsStart==null?1:m.callsStart));
+       var tk=m.tokens||{start:0,step:0};V[id+'.tokens']=fmtNum(tk.start+k*tk.step,'comma')+(tk.unit||'');
+       var q=on?Math.max(0,Math.floor((ph-0.35)*cps)):99999,a0=I.adv[0],a1=I.adv[1]||'';
+       V[id+'.adv0']=a0.slice(0,q);V[id+'.adv1']=q>a0.length+2?a1.slice(0,q-a0.length-2):'';
+       V[id+'.status']={text:on?(m.onText||'处置中'):(m.offText||'待命'),c:m.color||'pu',b:1}},
+     events:function(lo,hi){if(!m.log)return [];
+       var o=[];for(var k=Math.max(0,Math.floor((lo-t0)/m.period));k<=Math.ceil((hi-t0)/m.period);k++){
+         var I=it[mod(k,n)],
+         f=function(x){return String(x).replace(/\{(\w+)\}/g,function(a,b){return I[b]!=null?I[b]:a})};
+         o.push({t:t0+k*m.period,who:m.log.who,c:m.log.c,m:f(m.log.start.m),g:f(m.log.start.g||'')});
+         o.push({t:m.t0+k*m.period+m.on,who:m.log.who,c:m.log.c,m:f(m.log.end.m),g:f(m.log.end.g||'')})}
+       return o}}}
+};
+
+// ---------- 元素构建 ----------
+function place(d,e){if(e.x!=null)d.style.left=e.x+'px';if(e.y!=null)d.style.top=e.y+'px';
+  if(e.w!=null)d.style.width=e.w+'px';if(e.h!=null)d.style.height=e.h+'px'}
+var B={
+ text:function(e){ // y 为该行垂直中心
+   var size=e.size||FS,lh=e.lh||(e.size?Math.round(e.size*1.45):LH),d=document.createElement('div');
+   d.style.left=e.x+'px';d.style.top=(e.y-lh/2)+'px';d.style.height=lh+'px';d.style.lineHeight=lh+'px';
+   if(e.w!=null)d.style.width=e.w+'px';
+   d.style.textAlign=e.align||'left';
+   if(e.size)d.style.fontSize=size+'px';if(e.c)d.style.color=col(e.c);if(e.b)d.style.fontWeight=700;
+   if(e.ls)d.style.letterSpacing=e.ls+'px';if(e.font)d.style.fontFamily=e.font;
+   d.setAttribute('data-k','text');if(e.noCheck)d.setAttribute('data-free','1');if(e.inside)d.setAttribute('data-in','1');
+   var runs=e.runs||[{t:e.t!=null?e.t:e.text}];
+   DYN.push({el:d,fn:function(){return runsHtml(runs)},last:null});
+   ST.appendChild(d);
+ },
+ box:function(e){
+   var d=document.createElement('div'),solid=(e.sides||TH.boxMode)==='solid';
+   d.className='box'+(solid?' solid':'')+(e.dash?' dashed':'')+(TH.boxTicks?' ticks':'');
+   place(d,e);d.style.color=col(e.color||'fg');
+   if(e.radius!=null)d.style.borderRadius=e.radius+'px';
+   if(e.border!=null)d.style.setProperty('--bw',e.border+'px');
+   if(e.fill)d.style.backgroundColor=col(e.fill);
+   var p=e.pad||[10,14,14];
+   d.style.padding=p[0]+'px '+(p[2]==null?p[1]:p[2])+'px 0 '+p[1]+'px';
+   d.setAttribute('data-k',e.container?'frame':'box');
+   ST.appendChild(d);
+   (e.lines||[]).forEach(function(l){addLine(d,l,e.align)});
+   if(e.when&&e.then)CONDBOX.push({el:d,e:e,last:null});
+ },
+ wire:function(e){ // 轴对齐直连线
+   var a=e.from,b=e.to,w=e.width||TH.wireWidth||2,d=document.createElement('div');
+   d.className=e.dash?(a[0]===b[0]?'dashv':'dashh'):'wire';
+   if(a[0]===b[0]){d.style.left=(a[0]-w/2)+'px';d.style.top=Math.min(a[1],b[1])+'px';
+     d.style.width=w+'px';d.style.height=Math.abs(b[1]-a[1])+'px'}
+   else{d.style.top=(a[1]-w/2)+'px';d.style.left=Math.min(a[0],b[0])+'px';
+     d.style.height=w+'px';d.style.width=Math.abs(b[0]-a[0])+'px'}
+   if(e.color)d.style.background=col(e.color);
+   ST.appendChild(d);
+ },
+ poly:function(e){ // SVG 折线（可圆角、带箭头、随条件变色、可挂光点流）
+   var NS='http://www.w3.org/2000/svg',pts=e.points,r=e.r||0,
+   svg=document.createElementNS(NS,'svg');
+   svg.setAttribute('width',CW);svg.setAttribute('height',CH);
+   svg.style.cssText='left:0;top:0;overflow:visible;pointer-events:none';
+   var dd='M'+pts[0][0]+' '+pts[0][1];
+   for(var i=1;i<pts.length;i++){var a=pts[i-1],b=pts[i],c=pts[i+1];
+     if(r&&c){var l1=Math.hypot(b[0]-a[0],b[1]-a[1]),l2=Math.hypot(c[0]-b[0],c[1]-b[1]),rr=Math.min(r,l1/2,l2/2);
+       dd+=' L'+(b[0]-(b[0]-a[0])/l1*rr)+' '+(b[1]-(b[1]-a[1])/l1*rr)
+         +' Q'+b[0]+' '+b[1]+' '+(b[0]+(c[0]-b[0])/l2*rr)+' '+(b[1]+(c[1]-b[1])/l2*rr)}
+     else dd+=' L'+b[0]+' '+b[1]}
+   var pa=document.createElementNS(NS,'path');
+   pa.setAttribute('d',dd);pa.setAttribute('fill','none');
+   pa.setAttribute('stroke-linecap','round');pa.setAttribute('stroke-linejoin','round');
+   if(e.dash)pa.setAttribute('stroke-dasharray',e.dash===true?'6 5':e.dash);
+   svg.appendChild(pa);
+   var hd=null;
+   if(e.arrow!==false){hd=document.createElementNS(NS,'polygon');svg.appendChild(hd)}
+   var P={e:e,pa:pa,hd:hd,last:null};
+   var last=pts[pts.length-1],prev=pts[pts.length-2],
+   dx=last[0]-prev[0],dy=last[1]-prev[1],L=Math.hypot(dx,dy)||1;dx/=L;dy/=L;
+   var sz=e.head||9,bx=last[0]-dx*sz,by=last[1]-dy*sz;
+   P.headPts=last[0]+','+last[1]+' '+(bx-dy*sz*0.5)+','+(by+dx*sz*0.5)+' '+(bx+dy*sz*0.5)+','+(by-dx*sz*0.5);
+   ST.appendChild(svg);CONDPATH.push(P);
+   if(e.stream&&e.dash){ // 虚线波浪：加粗亮段沿基础虚线的格子逐格跳动
+     P.wave={period:e.stream.period||3,when:e.stream.when};
+     P.hl=document.createElementNS(NS,'path');P.hl.setAttribute('d',dd);
+     P.hl.setAttribute('fill','none');P.hl.setAttribute('stroke',col(e.color||'line'));
+     P.hl.setAttribute('stroke-width',String((e.width||TH.wireWidth||2)+2));
+     P.hl.setAttribute('opacity','0');svg.appendChild(P.hl);
+     var rl=P.len;try{rl=P.hl.getTotalLength()}catch(err){}
+     var pat=String(e.dash===true?'6 5':e.dash).trim().split(/\s+/).map(parseFloat),
+     dstep=(pat[0]||6)+(pat.length>1?pat[1]:5);
+     P.dashStep=dstep;P.waveN=Math.max(1,Math.floor(rl/dstep));
+     P.hl.setAttribute('stroke-dasharray',pat[0]+' '+(rl+dstep));
+   }else if(e.stream)B.stream(Object.assign({path:pts,color:e.color},e.stream));
+ },
+ glyph:function(e){
+   var s=e.size||17,d=document.createElement('div');d.className='glyph';
+   d.style.fontSize=s+'px';d.style.width='24px';d.style.height=s+'px';
+   d.style.left=(e.x-12)+'px';d.style.top=(e.y-s/2)+'px';
+   d.style.color=col(e.c||'dim');d.textContent=e.ch||'▼';
+   ST.appendChild(d);
+ },
+ rule:function(e){
+   var d=document.createElement('div');
+   d.style.left=e.x+'px';d.style.top=e.y+'px';d.style.width=e.w+'px';d.style.height='5px';
+   d.style.borderTop='1px solid '+col(e.c||'line');d.style.borderBottom=d.style.borderTop;
+   ST.appendChild(d);
+ },
+ stream:function(e){ // 光点流：大点带小尾点沿折线循环；全局送达计数 {packets}
+   var P=Object.assign({},e);prepPath(P);P.when=e.when;
+   P.o=e.offsets==null?[0]:e.offsets;P.tail=e.tail==null?15:e.tail;
+   P.th=Math.max(3,Math.round((TH.packetSize||12)/4));
+   P.el=P.o.map(function(){return mkpair(e.color)});
+   STREAMS.push(P);
+ },
+ beam:function(e){ // 触发光束：告警行 → 目标；亮起时虚线逐段放大、从头扫到尾（方向自动）
+   var id=e.alarm,i=e.i,y=e.from[1],x1=e.from[0],x2=e.to[0],
+   m=cfg.machines[id],c=col(m.color||'pu'),rightward=x2>x1;
+   var ln=document.createElement('div');ln.className='beamln';
+   var bx=rightward?x1:x2+18,bw=Math.max(0,Math.abs(x2-x1)-18);
+   ln.style.left=bx+'px';ln.style.width=bw+'px';ln.style.top=(y-1)+'px';
+   ST.appendChild(ln);
+   var dw=7,gap=6,step=dw+gap,count=Math.max(1,Math.floor(bw/step)),pad=(bw-count*step)/2,
+   dashes=[];
+   for(var d2=0;d2<count;d2++){
+     var s=document.createElement('div');s.className='bdash';
+     s.style.width=dw+'px';
+     s.style.left=(rightward?pad+d2*step:bw-pad-dw-d2*step)+'px';
+     ln.appendChild(s);dashes.push(s);
+   }
+   var hs=15,hd=document.createElement('div');hd.className='glyph';
+   hd.style.fontSize=hs+'px';hd.style.width='18px';hd.style.height=hs+'px';
+   hd.style.left=(rightward?x2-18:x2)+'px';hd.style.top=(y-hs/2)+'px';
+   hd.textContent=e.head||(rightward?'▶':'◀');ST.appendChild(hd);
+   BEAMS.push({hd:hd,dashes:dashes,count:count,on:m.on||3,id:id,i:i,c:c});
+ },
+ log:function(e){ // 日志：框 + 标题 + 定宽列；新行亮、旧行灰
+   var rows=e.rows||5,pb=e.padBottom==null?16:e.padBottom,h=rows*LH+pb,
+   x=e.x,y=e.y,w=e.w;
+   var fr=document.createElement('div');fr.className='feedframe';
+   fr.style.left=x+'px';fr.style.top=y+'px';fr.style.width=w+'px';fr.style.height=h+'px';
+   fr.setAttribute('data-k','frame');ST.appendChild(fr);
+   var tx=e.titleX==null?60:e.titleX,tw=e.titleW==null?190:e.titleW;
+   [[x,tx],[x+tx+tw,w-tx-tw]].forEach(function(s){
+     var t=document.createElement('div');t.className='feedtop';
+     t.style.left=s[0]+'px';t.style.top=y+'px';t.style.width=s[1]+'px';ST.appendChild(t)});
+   [x+tx,x+tx+tw].forEach(function(px){
+     var t=document.createElement('div');t.className='wire';
+     t.style.background='var(--c-line2)';t.style.left=px+'px';t.style.top=(y-10)+'px';
+     t.style.width='2px';t.style.height='20px';ST.appendChild(t)});
+   var lab=document.createElement('div');
+   lab.style.left=(x+tx+16)+'px';lab.style.top=(y-LH/2-4)+'px';lab.style.height=LH+'px';
+   lab.style.color=col('dim');lab.textContent=e.title||'log';
+   lab.setAttribute('data-k','text');ST.appendChild(lab);
+   FEED={rows:[],cols:e.cols,clock:cfg.clock||{start:'00:00:00',rate:1}};
+   for(var i=0;i<rows;i++){
+     var r=document.createElement('div');r.className='feedrow';
+     r.style.left=(x+(e.padLeft==null?20:e.padLeft))+'px';
+     r.style.top=(y+(e.padTop==null?8:e.padTop)+i*LH)+'px';
+     r.style.height=LH+'px';r.style.width=(w-40)+'px';
+     ST.appendChild(r);
+     var cells=e.cols.map(function(c){
+       var s=document.createElement('span');s.style.left=c.x+'px';s.style.height=LH+'px';
+       s.setAttribute('data-k','text');r.appendChild(s);return s});
+     FEED.rows.push({el:r,cells:cells,last:null});
+   }
+ }
+};
+
+function clockStr(t){
+  var p=FEED.clock.start.split(':').map(Number),
+  s=mod(Math.floor(p[0]*3600+p[1]*60+p[2]+t*FEED.clock.rate),86400),
+  z=function(n){return (n<10?'0':'')+n};
+  return z(Math.floor(s/3600))+':'+z(Math.floor(s/60)%60)+':'+z(s%60);
+}
+function renderLog(t){
+  if(!FEED)return;
+  var last=-1;for(var i=0;i<EVT.length;i++){if(EVT[i].t<=t)last=i;else break}
+  var n=FEED.rows.length;
+  FEED.rows.forEach(function(R,i){
+    var ev=EVT[last-(n-1)+i],isNew=i===n-1,key=ev?(ev.t+'|'+ev.m+'|'+isNew):'';
+    if(key===R.last)return;R.last=key;
+    FEED.cols.forEach(function(c,ci){
+      var s=R.cells[ci],txt='',c2='dim',bold=false,op=1;
+      if(ev){
+        if(c.key==='time')txt=clockStr(ev.t);
+        else if(c.key==='who'){txt=ev.who;c2=ev.c;bold=true;op=isNew?1:.8}
+        else if(c.key==='m'){txt=ev.m;if(isNew){c2='fg';bold=true}}
+        else if(c.key==='g'){txt=ev.g;if(isNew){c2='fg';bold=true}}
+      }
+      s.textContent=txt;s.style.color=col(c2);s.style.fontWeight=bold?'700':'400';s.style.opacity=op;
+    });
+  });
+}
+
+function styleWaves(t){ // 虚线波浪：加粗亮段逐格吸附在基础虚线上跳进
+  CONDPATH.forEach(function(P){
+    if(!P.wave)return;
+    var on=cond(P.wave.when);
+    var k=on?Math.floor(mod(t/P.wave.period,1)*P.waveN):-1;
+    if(k===P.lastK)return;P.lastK=k;
+    if(k<0){P.hl.setAttribute('opacity','0');return}
+    P.hl.setAttribute('opacity','1');
+    P.hl.setAttribute('stroke-dashoffset',String(-k*P.dashStep));
+  });
+}
+var EVT=[];
+function styleBoxes(){
+  CONDBOX.forEach(function(o){
+    var on=cond(o.e.when),th=on?o.e.then:{},k=on?'1':'0';
+    if(k===o.last)return;o.last=k;
+    var el=o.el,e=o.e;
+    el.style.backgroundColor=col(th.fill||e.fill)||'';
+    el.style.color=col(th.color||e.color||'fg');
+    el.style.setProperty('--bw',(th.border!=null?th.border:(e.border!=null?e.border:(TH.borderWidth||2)))+'px');
+    el.style.boxShadow=th.glow?'0 0 0 4px color-mix(in srgb,'+col(th.glow)+' 25%,transparent),0 0 16px color-mix(in srgb,'+col(th.glow)+' 50%,transparent)':'';
+  });
+}
+function stylePaths(){
+  CONDPATH.forEach(function(P){
+    var e=P.e,on=e.when&&cond(e.when),th=on?e.then:{},k=on?'1':'0';
+    if(k===P.last)return;P.last=k;
+    var c=col(th.color||e.color||'line'),w=th.width||e.width||TH.wireWidth||2;
+    P.pa.setAttribute('stroke',c);P.pa.setAttribute('stroke-width',w);
+    P.pa.style.opacity=th.opacity!=null?th.opacity:(e.opacity!=null?e.opacity:1);
+    if(P.hd){P.hd.setAttribute('fill',c);P.hd.setAttribute('points',P.headPts);P.hd.style.opacity=P.pa.style.opacity}
+    if(P.hl){P.hl.setAttribute('stroke',c);P.hl.setAttribute('stroke-width',String(w+2))}
+  });
+}
+
+// ---------- 唯一入口：seek(t) ----------
+window.seek=function(t){
+  if(!window.__ready){window.__pending=t;return}
+  try{
+    V.__t=t;
+    MACH.forEach(function(m){m.vars(t)});
+    var sig=0; // 光点送达总数 → {packets}（图上的数=真实送达的光点数）
+    STREAMS.forEach(function(P){
+      if(P.when&&!cond(P.when)){P.el.forEach(function(q){q[0].style.display='none';q[1].style.display='none'});return}
+      P.o.forEach(function(o,n){
+        var u=(t+PRE+o)/P.period,d=(u-Math.floor(u))*P.len;
+        sig+=Math.floor(u);
+        putPk(P.el[n][0],P.el[n][1],P,d);
+      });
+    });
+    V.packets=fmtNum(sig,'comma');
+    V.clock=FEED?clockStr(t):'';
+    BEAMS.forEach(function(A){
+      var on=V[A.id+'.active']===String(A.i);
+      A.hd.style.color=on?A.c:'var(--c-dim)';
+      var k=on?Math.floor(mod(Number(V[A.id+'.phase'])/A.on,1)*A.count):-1;
+      A.dashes.forEach(function(s,idx){
+        var hot=on&&idx===k;
+        s.style.background=hot?A.c:'';
+        s.style.height=hot?'5px':'2px';s.style.top=hot?'-3px':'-1px';
+        s.style.transform=hot?'scaleX(1.35)':'';
+      });
+    });
+    styleBoxes();stylePaths();styleWaves(t);applyDyn();renderLog(t);
+    window.__t=t;
+  }catch(e){fail(e)}
+};
+
+// ---------- 版面自检（scripts 里 check 子命令逐时刻调用） ----------
+window.__check=function(){
+  var prob=[],items=[],boxes=[],
+  sr=ST.getBoundingClientRect(),sc=sr.width/CW;
+  function R(rc){return {l:(rc.left-sr.left)/sc,t:(rc.top-sr.top)/sc,r:(rc.right-sr.left)/sc,b:(rc.bottom-sr.top)/sc}}
+  function contentRect(el){
+    var g=document.createRange();g.selectNodeContents(el);
+    var rs=g.getClientRects(),o=null;
+    for(var i=0;i<rs.length;i++){var q=rs[i];
+      if(q.width<0.5||q.height<0.5)continue;
+      if(!o)o={left:q.left,top:q.top,right:q.right,bottom:q.bottom};
+      else{o.left=Math.min(o.left,q.left);o.top=Math.min(o.top,q.top);
+        o.right=Math.max(o.right,q.right);o.bottom=Math.max(o.bottom,q.bottom)}}
+    return o;
+  }
+  var els=ST.querySelectorAll('[data-k]');
+  for(var i=0;i<els.length;i++){
+    var el=els[i],k=el.getAttribute('data-k');
+    if(k==='box'||k==='frame'){boxes.push({el:el,r:R(el.getBoundingClientRect()),k:k});continue}
+    if(el.getAttribute('data-free'))continue;
+    var cr=contentRect(el);if(!cr)continue;
+    var rr=R(cr);rr.el=el;rr.txt=el.textContent.trim().slice(0,26);
+    items.push(rr);
+  }
+  function ov(a,b){return Math.min(a.r,b.r)-Math.max(a.l,b.l)>1.5&&Math.min(a.b,b.b)-Math.max(a.t,b.t)>1.5}
+  items.forEach(function(a){if(a.l<-0.5||a.t<-0.5||a.r>CW+0.5||a.b>CH+0.5)prob.push('文本超出画布: "'+a.txt+'"')});
+  items.forEach(function(a){
+    var bx=null;
+    for(var i=0;i<boxes.length;i++)if(boxes[i].el.contains(a.el)){bx=boxes[i];break}
+    if(bx&&bx.k==='box'){var r=bx.r;
+      if(a.l<r.l+1||a.r>r.r-1||a.t<r.t-1||a.b>r.b+1)
+        prob.push('文本溢出所在面板: "'+a.txt+'" 文本['+Math.round(a.l)+'-'+Math.round(a.r)+'] 面板['+Math.round(r.l)+'-'+Math.round(r.r)+']')}
+  });
+  for(var x=0;x<items.length;x++)for(var y=x+1;y<items.length;y++){
+    var a=items[x],b=items[y];
+    if(a.el.contains(b.el)||b.el.contains(a.el))continue;
+    if(ov(a,b))prob.push('文本重叠: "'+a.txt+'" × "'+b.txt+'"');
+  }
+  items.forEach(function(a){
+    boxes.forEach(function(b){
+      if(b.k==='frame'||b.el.contains(a.el)||a.el.getAttribute('data-in'))return;
+      if(ov(a,b.r))prob.push('文本压在面板上: "'+a.txt+'"');
+    });
+  });
+  for(var p=0;p<boxes.length;p++)for(var q=p+1;q<boxes.length;q++){
+    if(boxes[p].k==='frame'||boxes[q].k==='frame')continue;
+    if(ov(boxes[p].r,boxes[q].r))prob.push('面板重叠: #'+p+' × #'+q);
+  }
+  return prob;
+};
+
+// ---------- 启动 ----------
+function fit(){
+  var s=Math.min(innerWidth/CW,innerHeight/CH);
+  ST.style.transform='scale('+s+')';
+  ST.style.left=((innerWidth-CW*s)/2)+'px';ST.style.top=((innerHeight-CH*s)/2)+'px';
+}
+var CANVAS_PRESETS={'4:5':[1200,1500],'3:4':[1080,1440],'1:1':[1080,1080],'9:16':[1080,1920],'16:9':[1920,1080]};
+var THEME_PRESETS={
+ 'terminal-dark':{font:'"JetBrains Mono","Cascadia Code","Consolas","IBM Plex Mono","DejaVu Sans Mono","Noto Sans Mono CJK SC","Microsoft YaHei",monospace',
+   fontSize:21,lineHeight:30,boxMode:'segmented',borderWidth:2,wireWidth:2,packetSize:12,glow:false,
+   colors:{bg:'#10141a',bar:'#222834',line:'#46506b',line2:'#38404f',dim:'#727d95',fg:'#e8ecf4',wh:'#ffffff',
+     cy:'#7fe3e8',bl:'#8db8f8',gn:'#82dca6',pu:'#c0a8f4',ye:'#e6c47e',rd:'#ef8a8a',hl:'#2c2a44',dots:'#525c74'}},
+  'github-dark':{font:'-apple-system,"Segoe UI","Noto Sans","Microsoft YaHei",Helvetica,Arial,sans-serif',
+   fontSize:21,lineHeight:30,boxMode:'solid',borderWidth:1,wireWidth:2,packetSize:10,glow:false,
+   titlebarStyle:'bar',grid:false,boxTicks:false,packetShape:'dot',radius:6,
+   colors:{bg:'#0d1117',bar:'#010409',line:'#30363d',line2:'#21262d',dim:'#8b949e',fg:'#e6edf3',wh:'#ffffff',
+     bl:'#4493f8',cy:'#56d4dd',gn:'#3fb950',pu:'#a371f7',ye:'#d29922',rd:'#f85149',hl:'#1c2233',dots:'#30363d'}},
+ 'github-light':{font:'-apple-system,"Segoe UI","Noto Sans","Microsoft YaHei",Helvetica,Arial,sans-serif',
+   fontSize:21,lineHeight:30,boxMode:'solid',borderWidth:1,wireWidth:2,packetSize:10,glow:false,
+   titlebarStyle:'bar',grid:false,boxTicks:false,packetShape:'dot',radius:6,
+   colors:{bg:'#ffffff',bar:'#24292f',line:'#d0d7de',line2:'#d8dee4',dim:'#656d76',fg:'#1f2328',wh:'#ffffff',
+     bl:'#0969da',cy:'#1b7c83',gn:'#1a7f37',pu:'#8250df',ye:'#9a6700',rd:'#cf222e',hl:'#ddf4ff',dots:'#d0d7de'}},
+'blueprint':{font:'"JetBrains Mono","Cascadia Code","Consolas","IBM Plex Mono","DejaVu Sans Mono","Noto Sans Mono CJK SC","Microsoft YaHei",monospace',
+   fontSize:21,lineHeight:30,boxMode:'solid',borderWidth:1,wireWidth:1.5,packetSize:10,glow:false,
+   titlebarStyle:'rule',grid:true,boxTicks:true,packetShape:'diamond',radius:0,
+   colors:{bg:'#0d2b4d',bar:'#16375c',line:'#a8cbe8',line2:'#40658c',dim:'#8fb0cf',fg:'#ecf5fe',wh:'#ffffff',
+     cy:'#a5f0ff',bl:'#9ecbff',gn:'#8ce8b0',pu:'#cbb2ff',ye:'#ffe08a',rd:'#ffa3a3',hl:'#1b4368',dots:'#40658c'}},
+ 'light-pastel':{font:'"Noto Sans CJK SC","PingFang SC","Microsoft YaHei","Helvetica Neue",Arial,sans-serif',
+   fontSize:17,lineHeight:24,boxMode:'solid',radius:9,borderWidth:1.5,wireWidth:2.2,packetSize:10,glow:true,
+   colors:{bg:'#fbfbfa',bar:'#f0f0ee',line:'#333a44',line2:'#c9ccd1',dim:'#7d8490',fg:'#22262e',wh:'#ffffff',ink:'#111111',
+     bl:'#5b90e0',blf:'#e2ecfc',gn:'#66b34e',gnf:'#e6f3dc',ye:'#dfb53a',yef:'#fff4d4',or:'#e5964a',orf:'#fcecdc',
+     rd:'#e27676',rdf:'#fce5e5',pu:'#ae86d6',puf:'#f1eaf9',tl:'#58b8ac',tlf:'#def3ef',gy:'#b7bbc2',gyf:'#f4f4f2',
+     pk:'#ef5560',lit:'#fff0b3'}}
+};
+function mergeTheme(u){
+  var base=THEME_PRESETS[u.preset||'terminal-dark']||THEME_PRESETS['terminal-dark'],o=Object.assign({},base,u);
+  o.colors=Object.assign({},base.colors,u.colors||{});
+  return o;
+}
+function boot(c){
+  cfg=c;
+  var cv=Object.assign({},c.canvas||{}),th=mergeTheme(c.theme||{});TH=th;
+  if(cv.preset&&CANVAS_PRESETS[cv.preset]){cv.width=cv.width||CANVAS_PRESETS[cv.preset][0];cv.height=cv.height||CANVAS_PRESETS[cv.preset][1]}
+  CW=cv.width||1200;CH=cv.height||1500;PRE=cv.preroll||0;
+  FS=th.fontSize||21;LH=th.lineHeight||30;
+  document.title=(c.meta&&c.meta.title)||'live-diagram';
+  if(c.meta&&c.meta.lang)document.documentElement.lang=c.meta.lang;
+  var root=document.documentElement.style,cols=th.colors||{};
+  Object.keys(cols).forEach(function(k){root.setProperty('--c-'+k,cols[k])});
+  root.setProperty('--font',th.font||'monospace');
+  root.setProperty('--radius',(th.radius||0)+'px');
+  root.setProperty('--bw',(th.borderWidth||2)+'px');
+  root.setProperty('--fs',FS+'px');root.setProperty('--lh',LH+'px');
+  ST.style.width=CW+'px';ST.style.height=CH+'px';ST.style.backgroundColor='var(--c-bg)';
+  if(TH.grid)ST.classList.add('grid');
+  var M=c.machines||{};
+  Object.keys(M).forEach(function(id){var m=M[id],f=MK[m.type];
+    if(!f)throw new Error('未知状态机类型: '+m.type);MACH.push(f(id,m))});
+  EVT=[];
+  var lo=-120,hi=(cv.duration||60)+120;
+  MACH.forEach(function(m){EVT=EVT.concat(m.events(lo,hi))});
+  EVT=EVT.map(function(e,i){e.__i=i;return e}).sort(function(a,b){return a.t-b.t||a.__i-b.__i});
+  if(c.titlebar){
+    var tb=c.titlebar,h=tb.height||38,d=document.createElement('div');d.className='tb';
+    d.style.width=CW+'px';d.style.height=h+'px';d.style.lineHeight=h+'px';
+    d.style.fontSize=(tb.size||14)+'px';
+    if((TH.titlebarStyle||'mac')==='bar'){
+      d.classList.add('ghbar');
+      if(tb.tag){var tg=document.createElement('span');tg.textContent=tb.tag;d.appendChild(tg)}
+    }else if((TH.titlebarStyle||'mac')==='rule'){
+      d.style.borderBottom='1px solid var(--c-line2)';d.style.textAlign='left';d.style.paddingLeft='24px';
+      if(tb.tag){var tg=document.createElement('span');
+        tg.style.cssText='position:absolute;right:24px;top:0;color:var(--c-dim)';
+        tg.textContent=tb.tag;d.appendChild(tg)}
+      d.style.color='var(--c-dim)';
+    }else{
+      [['#ef6459',20],['#f0bd3c',42],['#54c452',64]].forEach(function(o){
+        var i2=document.createElement('i');
+        i2.style.left=(o[1]-7)+'px';i2.style.top=(h/2-7)+'px';i2.style.width='14px';i2.style.height='14px';
+        i2.style.background=o[0];d.appendChild(i2)});
+    }
+    d.appendChild(document.createTextNode(tb.text||''));
+    ST.appendChild(d);
+  }
+  (c.elements||[]).forEach(function(e){
+    var f=B[e.type];
+    if(!f)throw new Error('未知元素类型: '+e.type);f(e);
+  });
+  if(c.credit)B.text(Object.assign({type:'text',x:0,w:CW,align:'center',y:CH-16,size:12,c:'dim'},c.credit));
+  fit();addEventListener('resize',fit);
+  var go=function(){
+    window.__ready=true;
+    window.seek(window.__pending==null?0:window.__pending);
+    if(/[?&]t=/.test(location.search))return; // 单帧模式：渲染 ?t= 指定的一帧后停住
+    if(!/[?&]manual/.test(location.search)){
+      var t0=performance.now(),D=cv.duration||30;
+      (function loop(now){window.seek(((now-t0)/1000)%D);requestAnimationFrame(loop)})(t0);
+    }
+  };
+  (document.fonts&&document.fonts.ready?document.fonts.ready:Promise.resolve()).then(go);
+}
+loadConfig().then(boot).catch(fail);
+})();
+</script></body></html>
