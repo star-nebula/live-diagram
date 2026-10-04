@@ -2,7 +2,9 @@
 
 把**一份 JSON 配置**渲染成版面固定的运行动画架构图：连线上光点流动、日志滚动、计数跳动、仪表条翻状态、侧栏告警逐格扫过——产出 **H.264 mp4**（X / 小红书 / 抖音 / B 站）或**可在浏览器直接打开的动态网页**。也是一个 [AI agent skill](SKILL.md)。
 
-![preview](examples/rag-pipeline/screenshots/frame_1.png)
+![preview](docs/media/memory-vault-panel.webp)
+
+*循环播放：用本 skill 渲染的 AI Memory Vault 运行面板（GitHub 暗色主题；数字均为示意）。静态示例截图见 [examples/rag-pipeline/screenshots/](examples/rag-pipeline/screenshots/)。*
 
 核心理念（重写自 [ythx-101/live-panel-skill](https://github.com/ythx-101/live-panel-skill) 的方法，代码全部独立实现）：
 
